@@ -48,6 +48,18 @@ impl RenderContext {
         }
     }
 
+    /// Construct a `RenderContext` without text sources
+    pub fn new_no_text(size: Size) -> Self {
+        Self {
+            size,
+            stack: Vec::new(),
+            state: State::default(),
+            doc: svg::Document::new(),
+            next_id: 0,
+            text: Text::new_empty_source(),
+        }
+    }
+
     /// The size that the SVG will render at.
     ///
     /// The size is used to set the view box for the svg.
