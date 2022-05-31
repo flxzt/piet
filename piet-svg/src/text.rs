@@ -46,9 +46,9 @@ impl Text {
 
     pub fn new_empty_source() -> Self {
         Text {
-            source: Arc::new(Mutex::new(MultiSource::from_sources(vec![
-                Box::new(MemSource::empty()),
-            ]))),
+            source: Arc::new(Mutex::new(MultiSource::from_sources(vec![Box::new(
+                MemSource::empty(),
+            )]))),
             seen_fonts: Arc::new(Mutex::new(HashSet::new())),
         }
     }

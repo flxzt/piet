@@ -187,9 +187,8 @@ impl Color {
         Color::from_rgba32_u32((self.as_rgba_u32() & !0xff) | a)
     }
 
-
     /// Change just the alpha value of a color
-    /// 
+    ///
     /// The `a` value represents alpha as a u8 from 0 to 255.
     pub const fn with_a8(self, a: u8) -> Color {
         Color::from_rgba32_u32((self.as_rgba_u32() & !0xff) | a as u32)
