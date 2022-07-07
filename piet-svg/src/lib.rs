@@ -60,6 +60,10 @@ impl RenderContext {
         }
     }
 
+    pub fn append_svg_node(&mut self, node: impl Node) {
+        self.doc.append(node);
+    }
+
     /// The size that the SVG will render at.
     ///
     /// The size is used to set the view box for the svg.
