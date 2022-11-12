@@ -23,7 +23,7 @@ use piet::kurbo::{Affine, PathEl, Point, Rect, Shape, Size};
 use piet::util::unpremul;
 use piet::{
     Color, Error, FixedGradient, GradientStop, Image, ImageFormat, InterpolationMode, IntoBrush,
-    LineCap, LineJoin, RenderContext, StrokeStyle,
+    LineCap, LineJoin, RenderContext, StrokeDash, StrokeStyle,
 };
 
 pub use text::{WebFont, WebTextLayout, WebTextLayoutBuilder};
@@ -34,6 +34,7 @@ pub struct WebRenderContext<'a> {
     window: Window,
     text: WebText,
     err: Result<(), Error>,
+    canvas_states: Vec<CanvasState>,
     _phantom: PhantomData<&'a ()>,
 }
 
@@ -44,7 +45,36 @@ impl WebRenderContext<'_> {
             window,
             text: WebText::new(ctx),
             err: Ok(()),
+            canvas_states: vec![CanvasState::default()],
             _phantom: PhantomData,
+        }
+    }
+}
+
+#[derive(Clone)]
+struct CanvasState {
+    line_cap: LineCap,
+    line_dash: StrokeDash,
+    line_dash_offset: f64,
+    line_join: LineJoin,
+    line_width: f64,
+}
+
+impl Default for CanvasState {
+    /// Returns the default canvas state according to the Canvas API.
+    fn default() -> CanvasState {
+        CanvasState {
+            // https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/lineCap#value
+            line_cap: LineCap::Butt,
+            // https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/setLineDash
+            line_dash: StrokeDash::default(),
+            // https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/lineDashOffset#value
+            line_dash_offset: 0.,
+            // https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/lineJoin#value
+            // https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/miterLimit#value
+            line_join: LineJoin::Miter { limit: 10. },
+            // https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/lineWidth#value
+            line_width: 1.,
         }
     }
 }
@@ -211,7 +241,7 @@ impl RenderContext for WebRenderContext<'_> {
         let brush = brush.make_brush(self, || shape.bounding_box());
         self.set_path(shape);
         self.set_stroke(width, None);
-        self.set_brush(&*brush.deref(), false);
+        self.set_brush(brush.deref(), false);
         self.ctx.stroke();
     }
 
@@ -225,7 +255,7 @@ impl RenderContext for WebRenderContext<'_> {
         let brush = brush.make_brush(self, || shape.bounding_box());
         self.set_path(shape);
         self.set_stroke(width, Some(style));
-        self.set_brush(&*brush.deref(), false);
+        self.set_brush(brush.deref(), false);
         self.ctx.stroke();
     }
 
@@ -255,11 +285,17 @@ impl RenderContext for WebRenderContext<'_> {
 
     fn save(&mut self) -> Result<(), Error> {
         self.ctx.save();
+        self.canvas_states
+            .push(self.canvas_states.last().unwrap().clone());
         Ok(())
     }
 
     fn restore(&mut self) -> Result<(), Error> {
-        self.ctx.restore();
+        // restore state only if there is a state to restore
+        if self.canvas_states.len() > 1 {
+            self.canvas_states.pop();
+            self.ctx.restore();
+        }
         Ok(())
     }
 
@@ -475,23 +511,39 @@ impl WebRenderContext<'_> {
     }
 
     /// Set the stroke parameters.
-    ///
-    /// TODO(performance): this is probably expensive enough it makes sense
-    /// to at least store the last version and only reset if it's changed.
     fn set_stroke(&mut self, width: f64, style: Option<&StrokeStyle>) {
         let default_style = StrokeStyle::default();
         let style = style.unwrap_or(&default_style);
+        let mut canvas_state = self.canvas_states.last_mut().unwrap();
 
-        self.ctx.set_line_width(width);
-        self.ctx.set_line_join(convert_line_join(style.line_join));
-        self.ctx.set_line_cap(convert_line_cap(style.line_cap));
-        if let Some(limit) = style.miter_limit() {
-            self.ctx.set_miter_limit(limit);
+        if width != canvas_state.line_width {
+            self.ctx.set_line_width(width);
+            canvas_state.line_width = width;
         }
 
-        let dash_segs = convert_dash_pattern(&style.dash_pattern);
-        self.ctx.set_line_dash(dash_segs.as_ref()).unwrap();
-        self.ctx.set_line_dash_offset(style.dash_offset);
+        if style.line_join != canvas_state.line_join {
+            self.ctx.set_line_join(convert_line_join(style.line_join));
+            if let Some(limit) = style.miter_limit() {
+                self.ctx.set_miter_limit(limit);
+            }
+            canvas_state.line_join = style.line_join;
+        }
+
+        if style.line_cap != canvas_state.line_cap {
+            self.ctx.set_line_cap(convert_line_cap(style.line_cap));
+            canvas_state.line_cap = style.line_cap;
+        }
+
+        if style.dash_pattern != canvas_state.line_dash {
+            let dash_segs = convert_dash_pattern(&style.dash_pattern);
+            self.ctx.set_line_dash(dash_segs.as_ref()).unwrap();
+            canvas_state.line_dash = style.dash_pattern.clone();
+        }
+
+        if style.dash_offset != canvas_state.line_dash_offset {
+            self.ctx.set_line_dash_offset(style.dash_offset);
+            canvas_state.line_dash_offset = style.dash_offset;
+        }
     }
 
     fn set_path(&mut self, shape: impl Shape) {
