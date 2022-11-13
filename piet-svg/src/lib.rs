@@ -9,7 +9,7 @@ mod text;
 use std::{borrow::Cow, fmt, fmt::Write, io, mem};
 
 use image::{DynamicImage, GenericImageView, ImageBuffer};
-use piet::kurbo::{Affine, Point, Rect, Shape, Size};
+use piet::kurbo::{Affine, BezPath, PathEl, Point, Rect, Shape, Size};
 use piet::{
     Color, Error, FixedGradient, FontStyle, Image, ImageFormat, InterpolationMode, IntoBrush,
     LineCap, LineJoin, StrokeStyle, TextAlignment, TextLayout as _,
@@ -28,6 +28,7 @@ type Result<T> = std::result::Result<T, Error>;
 /// `piet::RenderContext` for generating SVG images
 pub struct RenderContext {
     size: Size,
+    decimal_digits: usize,
     stack: Vec<State>,
     state: State,
     doc: svg::Document,
@@ -37,9 +38,10 @@ pub struct RenderContext {
 
 impl RenderContext {
     /// Construct an empty `RenderContext`
-    pub fn new(size: Size) -> Self {
+    pub fn new(size: Size, decimal_digits: usize) -> Self {
         Self {
             size,
+            decimal_digits,
             stack: Vec::new(),
             state: State::default(),
             doc: svg::Document::new(),
@@ -49,9 +51,10 @@ impl RenderContext {
     }
 
     /// Construct a `RenderContext` without text sources
-    pub fn new_no_text(size: Size) -> Self {
+    pub fn new_no_text(size: Size, decimal_digits: usize) -> Self {
         Self {
             size,
+            decimal_digits,
             stack: Vec::new(),
             state: State::default(),
             doc: svg::Document::new(),
@@ -60,6 +63,7 @@ impl RenderContext {
         }
     }
 
+    // An escape hatch to directly append svg nodes to the context
     pub fn append_svg_node(&mut self, node: impl Node) {
         self.doc.append(node);
     }
@@ -106,10 +110,13 @@ impl piet::RenderContext for RenderContext {
         let rect = rect.into();
         let mut rect = match rect {
             Some(rect) => svg::node::element::Rectangle::new()
-                .set("width", rect.width())
-                .set("height", rect.height())
-                .set("x", rect.x0)
-                .set("y", rect.y0),
+                .set("width", format!("{:.*}", self.decimal_digits, rect.width()))
+                .set(
+                    "height",
+                    format!("{:.*}", self.decimal_digits, rect.height()),
+                )
+                .set("x", format!("{:.*}", self.decimal_digits, rect.x0))
+                .set("y", format!("{:.*}", self.decimal_digits, rect.y0)),
             None => svg::node::element::Rectangle::new()
                 .set("width", "100%")
                 .set("height", "100%"),
@@ -136,14 +143,14 @@ impl piet::RenderContext for RenderContext {
                 let mut gradient = svg::node::element::LinearGradient::new()
                     .set("gradientUnits", "userSpaceOnUse")
                     .set("id", id)
-                    .set("x1", x.start.x)
-                    .set("y1", x.start.y)
-                    .set("x2", x.end.x)
-                    .set("y2", x.end.y);
+                    .set("x1", format!("{:.*}", self.decimal_digits, x.start.x))
+                    .set("y1", format!("{:.*}", self.decimal_digits, x.start.y))
+                    .set("x2", format!("{:.*}", self.decimal_digits, x.end.x))
+                    .set("y2", format!("{:.*}", self.decimal_digits, x.end.y));
                 for stop in x.stops {
                     gradient.append(
                         svg::node::element::Stop::new()
-                            .set("offset", stop.pos)
+                            .set("offset", format!("{:.*}", self.decimal_digits, stop.pos))
                             .set("stop-color", fmt_color(stop.color))
                             .set("stop-opacity", fmt_opacity(stop.color)),
                     );
@@ -154,15 +161,21 @@ impl piet::RenderContext for RenderContext {
                 let mut gradient = svg::node::element::RadialGradient::new()
                     .set("gradientUnits", "userSpaceOnUse")
                     .set("id", id)
-                    .set("cx", x.center.x)
-                    .set("cy", x.center.y)
-                    .set("fx", x.center.x + x.origin_offset.x)
-                    .set("fy", x.center.y + x.origin_offset.y)
-                    .set("r", x.radius);
+                    .set("cx", format!("{:.*}", self.decimal_digits, x.center.x))
+                    .set("cy", format!("{:.*}", self.decimal_digits, x.center.y))
+                    .set(
+                        "fx",
+                        format!("{:.*}", self.decimal_digits, x.center.x + x.origin_offset.x),
+                    )
+                    .set(
+                        "fy",
+                        format!("{:.*}", self.decimal_digits, x.center.y + x.origin_offset.y),
+                    )
+                    .set("r", format!("{:.*}", self.decimal_digits, x.radius));
                 for stop in x.stops {
                     gradient.append(
                         svg::node::element::Stop::new()
-                            .set("offset", stop.pos)
+                            .set("offset", format!("{:.*}", self.decimal_digits, stop.pos))
                             .set("stop-color", fmt_color(stop.color))
                             .set("stop-opacity", fmt_opacity(stop.color)),
                     );
@@ -186,6 +199,7 @@ impl piet::RenderContext for RenderContext {
                 fill: Some((brush.into_owned(), None)),
                 ..Attrs::default()
             },
+            self.decimal_digits,
         );
     }
 
@@ -200,6 +214,7 @@ impl piet::RenderContext for RenderContext {
                 fill: Some((brush.into_owned(), Some("evenodd"))),
                 ..Attrs::default()
             },
+            self.decimal_digits,
         );
     }
 
@@ -214,6 +229,7 @@ impl piet::RenderContext for RenderContext {
                 clip: self.state.clip,
                 ..Attrs::default()
             },
+            self.decimal_digits,
         );
         self.doc.append(clip);
         self.state.clip = Some(id);
@@ -230,6 +246,7 @@ impl piet::RenderContext for RenderContext {
                 stroke: Some((brush.into_owned(), width, &StrokeStyle::new())),
                 ..Attrs::default()
             },
+            self.decimal_digits,
         );
     }
 
@@ -250,6 +267,7 @@ impl piet::RenderContext for RenderContext {
                 stroke: Some((brush.into_owned(), width, style)),
                 ..Attrs::default()
             },
+            self.decimal_digits,
         );
     }
 
@@ -532,7 +550,7 @@ struct Attrs<'a> {
 impl Attrs<'_> {
     // allow clippy warning for `width != 1.0` in if statement
     #[allow(clippy::float_cmp)]
-    fn apply_to(&self, node: &mut impl Node) {
+    fn apply_to(&self, node: &mut impl Node, decimal_digits: usize) {
         node.assign("transform", xf_val(&self.xf));
         if let Some(id) = self.clip {
             node.assign("clip-path", format!("url(#{})", id.to_string()));
@@ -554,7 +572,7 @@ impl Attrs<'_> {
                 node.assign("stroke-opacity", opacity);
             }
             if width != 1.0 {
-                node.assign("stroke-width", width);
+                node.assign("stroke-width", format!("{:.*}", decimal_digits, width));
             }
             match style.line_join {
                 LineJoin::Miter { limit } if limit == LineJoin::DEFAULT_MITER_LIMIT => (),
@@ -596,38 +614,61 @@ fn xf_val(xf: &Affine) -> svg::node::Value {
     .into()
 }
 
-fn add_shape(node: &mut impl Node, shape: impl Shape, attrs: &Attrs) {
+fn add_shape(node: &mut impl Node, shape: impl Shape, attrs: &Attrs, decimal_digits: usize) {
     if let Some(circle) = shape.as_circle() {
         let mut x = svg::node::element::Circle::new()
-            .set("cx", circle.center.x)
-            .set("cy", circle.center.y)
-            .set("r", circle.radius);
-        attrs.apply_to(&mut x);
+            .set("cx", format!("{:.*}", decimal_digits, circle.center.x))
+            .set("cy", format!("{:.*}", decimal_digits, circle.center.y))
+            .set("r", format!("{:.*}", decimal_digits, circle.radius));
+        attrs.apply_to(&mut x, decimal_digits);
         node.append(x);
     } else if let Some(round_rect) = shape
         .as_rounded_rect()
         .filter(|r| r.radii().as_single_radius().is_some())
     {
         let mut x = svg::node::element::Rectangle::new()
-            .set("x", round_rect.origin().x)
-            .set("y", round_rect.origin().y)
-            .set("width", round_rect.width())
-            .set("height", round_rect.height())
-            .set("rx", round_rect.radii().as_single_radius().unwrap())
-            .set("ry", round_rect.radii().as_single_radius().unwrap());
-        attrs.apply_to(&mut x);
+            .set("x", format!("{:.*}", decimal_digits, round_rect.origin().x))
+            .set("y", format!("{:.*}", decimal_digits, round_rect.origin().y))
+            .set(
+                "width",
+                format!("{:.*}", decimal_digits, round_rect.width()),
+            )
+            .set(
+                "height",
+                format!("{:.*}", decimal_digits, round_rect.height()),
+            )
+            .set(
+                "rx",
+                format!(
+                    "{:.*}",
+                    decimal_digits,
+                    round_rect.radii().as_single_radius().unwrap()
+                ),
+            )
+            .set(
+                "ry",
+                format!(
+                    "{:.*}",
+                    decimal_digits,
+                    round_rect.radii().as_single_radius().unwrap()
+                ),
+            );
+        attrs.apply_to(&mut x, decimal_digits);
         node.append(x);
     } else if let Some(rect) = shape.as_rect() {
         let mut x = svg::node::element::Rectangle::new()
-            .set("x", rect.origin().x)
-            .set("y", rect.origin().y)
-            .set("width", rect.width())
-            .set("height", rect.height());
-        attrs.apply_to(&mut x);
+            .set("x", format!("{:.*}", decimal_digits, rect.origin().x))
+            .set("y", format!("{:.*}", decimal_digits, rect.origin().y))
+            .set("width", format!("{:.*}", decimal_digits, rect.width()))
+            .set("height", format!("{:.*}", decimal_digits, rect.height()));
+        attrs.apply_to(&mut x, decimal_digits);
         node.append(x);
     } else {
-        let mut path = svg::node::element::Path::new().set("d", shape.into_path(1e-3).to_svg());
-        attrs.apply_to(&mut path);
+        let mut path = svg::node::element::Path::new().set(
+            "d",
+            bezpath_to_svg_w_decimal_digits(&shape.into_path(1e-3), decimal_digits),
+        );
+        attrs.apply_to(&mut path, decimal_digits);
         node.append(path);
     }
 }
@@ -725,4 +766,50 @@ impl From<Id> for svg::node::Value {
     fn from(x: Id) -> Self {
         x.to_string().into()
     }
+}
+
+fn bezpath_to_svg_w_decimal_digits(bez_path: &BezPath, decimal_digits: usize) -> String {
+    let mut svg_string = String::new();
+
+    for el in bez_path.elements() {
+        match *el {
+            PathEl::MoveTo(p) => write!(
+                svg_string,
+                "M{} {}",
+                format!("{:.*}", decimal_digits, p.x),
+                format!("{:.*}", decimal_digits, p.y)
+            )
+            .unwrap(),
+            PathEl::LineTo(p) => write!(
+                svg_string,
+                "L{} {}",
+                format!("{:.*}", decimal_digits, p.x),
+                format!("{:.*}", decimal_digits, p.y)
+            )
+            .unwrap(),
+            PathEl::QuadTo(p1, p2) => write!(
+                svg_string,
+                "Q{} {} {} {}",
+                format!("{:.*}", decimal_digits, p1.x),
+                format!("{:.*}", decimal_digits, p1.y),
+                format!("{:.*}", decimal_digits, p2.x),
+                format!("{:.*}", decimal_digits, p2.y)
+            )
+            .unwrap(),
+            PathEl::CurveTo(p1, p2, p3) => write!(
+                svg_string,
+                "C{} {} {} {} {} {}",
+                format!("{:.*}", decimal_digits, p1.x),
+                format!("{:.*}", decimal_digits, p1.y),
+                format!("{:.*}", decimal_digits, p2.x),
+                format!("{:.*}", decimal_digits, p2.y),
+                format!("{:.*}", decimal_digits, p3.x),
+                format!("{:.*}", decimal_digits, p3.y)
+            )
+            .unwrap(),
+            PathEl::ClosePath => write!(svg_string, "Z").unwrap(),
+        };
+    }
+
+    svg_string
 }
