@@ -27,7 +27,8 @@ type Result<T> = std::result::Result<T, Error>;
 
 /// `piet::RenderContext` for generating SVG images
 pub struct RenderContext {
-    size: Size,
+    bounds: Rect,
+    viewbox: Rect,
     decimal_digits: usize,
     stack: Vec<State>,
     state: State,
@@ -38,9 +39,10 @@ pub struct RenderContext {
 
 impl RenderContext {
     /// Construct an empty `RenderContext`
-    pub fn new(size: Size, decimal_digits: usize) -> Self {
+    pub fn new(bounds: Rect, viewbox: Rect, decimal_digits: usize) -> Self {
         Self {
-            size,
+            bounds,
+            viewbox,
             decimal_digits,
             stack: Vec::new(),
             state: State::default(),
@@ -51,9 +53,10 @@ impl RenderContext {
     }
 
     /// Construct a `RenderContext` without text sources
-    pub fn new_no_text(size: Size, decimal_digits: usize) -> Self {
+    pub fn new_no_text(bounds: Rect, viewbox: Rect, decimal_digits: usize) -> Self {
         Self {
-            size,
+            bounds,
+            viewbox,
             decimal_digits,
             stack: Vec::new(),
             state: State::default(),
@@ -69,10 +72,8 @@ impl RenderContext {
     }
 
     /// The size that the SVG will render at.
-    ///
-    /// The size is used to set the view box for the svg.
     pub fn size(&self) -> Size {
-        self.size
+        self.viewbox.size()
     }
 
     /// Write graphics rendered so far to an `std::io::Write` impl, such as `std::fs::File`
@@ -368,11 +369,26 @@ impl piet::RenderContext for RenderContext {
     }
 
     fn finish(&mut self) -> Result<()> {
-        self.doc
-            .assign("viewBox", (0, 0, self.size.width, self.size.height));
+        self.doc.assign("x", self.bounds.x0);
+        self.doc.assign("y", self.bounds.y0);
+        self.doc.assign("width", self.bounds.width());
+        self.doc.assign("height", self.bounds.height());
+        self.doc.assign(
+            "viewBox",
+            (
+                self.viewbox.x0,
+                self.viewbox.y0,
+                self.viewbox.width(),
+                self.viewbox.height(),
+            ),
+        );
         self.doc.assign(
             "style",
-            format!("width:{}px;height:{}px;", self.size.width, self.size.height),
+            format!(
+                "width:{}px;height:{}px;",
+                self.viewbox.width(),
+                self.viewbox.height()
+            ),
         );
 
         let text = (*self.text()).clone();
