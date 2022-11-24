@@ -123,7 +123,7 @@ impl<'a> RenderContext for CairoRenderContext<'a> {
     fn fill(&mut self, shape: impl Shape, brush: &impl IntoBrush<Self>) {
         let brush = brush.make_brush(self, || shape.bounding_box());
         self.set_path(shape);
-        self.set_brush(&*brush);
+        self.set_brush(&brush);
         self.ctx.set_fill_rule(cairo::FillRule::Winding);
         self.error = self.ctx.fill();
     }
@@ -131,7 +131,7 @@ impl<'a> RenderContext for CairoRenderContext<'a> {
     fn fill_even_odd(&mut self, shape: impl Shape, brush: &impl IntoBrush<Self>) {
         let brush = brush.make_brush(self, || shape.bounding_box());
         self.set_path(shape);
-        self.set_brush(&*brush);
+        self.set_brush(&brush);
         self.ctx.set_fill_rule(cairo::FillRule::EvenOdd);
         self.error = self.ctx.fill();
     }
@@ -146,7 +146,7 @@ impl<'a> RenderContext for CairoRenderContext<'a> {
         let brush = brush.make_brush(self, || shape.bounding_box());
         self.set_path(shape);
         self.set_stroke(width, None);
-        self.set_brush(&*brush);
+        self.set_brush(&brush);
         self.error = self.ctx.stroke();
     }
 
@@ -160,7 +160,7 @@ impl<'a> RenderContext for CairoRenderContext<'a> {
         let brush = brush.make_brush(self, || shape.bounding_box());
         self.set_path(shape);
         self.set_stroke(width, Some(style));
-        self.set_brush(&*brush);
+        self.set_brush(&brush);
         self.error = self.ctx.stroke();
     }
 
@@ -333,19 +333,19 @@ impl<'a> RenderContext for CairoRenderContext<'a> {
         // user space (the logical rectangle) to device space (the "physical" rectangle).
         // For example, in a HiDPI (2x) setting, a user-space rectangle of 20x20 would be
         // 40x40 in device space.
-        let user_rect = Rectangle {
-            x: src_rect.x0,
-            y: src_rect.y0,
-            width: src_rect.width(),
-            height: src_rect.height(),
-        };
+        let user_rect = Rectangle::new(
+            src_rect.x0,
+            src_rect.y0,
+            src_rect.width(),
+            src_rect.height(),
+        );
         let device_rect = self.user_to_device(&user_rect);
 
         // This is the surface to which we draw the captured image area
         let target_surface = ImageSurface::create(
             Format::ARgb32,
-            device_rect.width as i32,
-            device_rect.height as i32,
+            device_rect.width() as i32,
+            device_rect.height() as i32,
         )
         .map_err(convert_error)?;
         let target_ctx = Context::new(&target_surface).map_err(convert_error)?;
@@ -363,7 +363,7 @@ impl<'a> RenderContext for CairoRenderContext<'a> {
         target_ctx
             .set_source_surface(&cropped_source_surface, 0.0, 0.0)
             .map_err(convert_error)?;
-        target_ctx.rectangle(0.0, 0.0, device_rect.width, device_rect.height);
+        target_ctx.rectangle(0.0, 0.0, device_rect.width(), device_rect.height());
         target_ctx.fill().map_err(convert_error)?;
 
         Ok(CairoImage(target_surface))
@@ -373,7 +373,7 @@ impl<'a> RenderContext for CairoRenderContext<'a> {
         let brush = brush.make_brush(self, || rect);
         match compute_blurred_rect(rect, blur_radius) {
             Ok((image, origin)) => {
-                self.set_brush(&*brush);
+                self.set_brush(&brush);
                 self.error = self
                     .ctx
                     .mask_surface(&image, origin.x, origin.y)
@@ -517,14 +517,12 @@ impl<'a> CairoRenderContext<'a> {
     }
 
     fn user_to_device(&self, user_rect: &Rectangle) -> Rectangle {
-        let (x, y) = self.ctx.user_to_device(user_rect.x, user_rect.y);
-        let (width, height) = self.ctx.user_to_device(user_rect.width, user_rect.height);
-        Rectangle {
-            x,
-            y,
-            width,
-            height,
-        }
+        let (x, y) = self.ctx.user_to_device(user_rect.x(), user_rect.y());
+        let (width, height) = self
+            .ctx
+            .user_to_device(user_rect.width(), user_rect.height());
+
+        Rectangle::new(x, y, width, height)
     }
 }
 
@@ -551,14 +549,8 @@ fn byte_to_frac(byte: u32) -> f64 {
 /// Can't implement RoundFrom here because both types belong to other crates.
 fn affine_to_matrix(affine: Affine) -> Matrix {
     let a = affine.as_coeffs();
-    Matrix {
-        xx: a[0],
-        yx: a[1],
-        xy: a[2],
-        yy: a[3],
-        x0: a[4],
-        y0: a[5],
-    }
+
+    Matrix::new(a[0], a[1], a[2], a[3], a[4], a[5])
 }
 
 fn compute_blurred_rect(rect: Rect, radius: f64) -> Result<(ImageSurface, Point), cairo::Error> {
@@ -573,7 +565,7 @@ fn compute_blurred_rect(rect: Rect, radius: f64) -> Result<(ImageSurface, Point)
             //      Or the surface is finished (it isnt, we know because we dont finish it).
             // Since we know none of these cases should happen, we know that this should not panic.
             let mut data = image.data().unwrap();
-            let rect_exp = piet::util::compute_blurred_rect(rect, radius, stride, &mut *data);
+            let rect_exp = piet::util::compute_blurred_rect(rect, radius, stride, &mut data);
             std::mem::drop(data);
             let origin = rect_exp.origin();
             Ok((image, origin))

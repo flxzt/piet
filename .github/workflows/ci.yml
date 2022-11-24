@@ -35,7 +35,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macOS-latest, windows-2019, ubuntu-latest]
+        os: [macOS-11, windows-2019, ubuntu-latest]
     name: cargo clippy+test
     steps:
       - uses: actions/checkout@v2
@@ -140,7 +140,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macOS-latest, windows-2019, ubuntu-latest]
+        os: [macOS-11, windows-2019, ubuntu-latest]
     name: cargo clippy+test (wasm32)
     steps:
       - uses: actions/checkout@v2
@@ -195,11 +195,6 @@ jobs:
           command: test
           args: --manifest-path=piet-common/Cargo.toml --features=png --no-run --target wasm32-unknown-unknown
 
-  test-wasm-pack:
-    runs-on: ubuntu-latest
-    name: wasm-pack test
-    steps:
-      - uses: actions/checkout@v2
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
       - name: test chrome
@@ -211,7 +206,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macOS-latest, windows-2019, ubuntu-latest]
+        os: [macOS-11, windows-2019, ubuntu-latest]
     name: cargo test nightly
     steps:
       - uses: actions/checkout@v2
@@ -276,7 +271,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macOS-latest, windows-2019, ubuntu-latest]
+        os: [macOS-11, windows-2019, ubuntu-latest]
     steps:
       - uses: actions/checkout@v2
         with:
