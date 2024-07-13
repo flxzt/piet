@@ -316,7 +316,7 @@ impl WebTextLayout {
         // various functions like `text_width` are stateful, and require
         // the context to be configured correcttly.
         self.ctx.set_font(&self.font.get_font_string());
-        let new_width = new_width.into().unwrap_or(std::f64::INFINITY);
+        let new_width = new_width.into().unwrap_or(f64::INFINITY);
         let mut line_metrics =
             lines::calculate_line_metrics(&self.text, &self.ctx, new_width, self.font.size);
 
